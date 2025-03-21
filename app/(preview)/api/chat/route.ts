@@ -11,22 +11,45 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const result = streamText({
-    model: openai("gpt-4o"),
+    model: openai("gpt-4o-mini"),
     messages,
-    system: `You are a helpful assistant acting as the users' second brain.
-    Use tools on every request.
-    Be sure to getInformation from your knowledge base before answering any questions.
-    If the user presents infromation about themselves, use the addResource tool to store it.
-    If a response requires multiple tools, call one tool after another without responding to the user.
-    If a response requires information from an additional tool to generate a response, call the appropriate tools in order before responding to the user.
-    ONLY respond to questions using information from tool calls.
-    if no relevant information is found in the tool calls, respond, "Sorry, I don't know."
-    Be sure to adhere to any instructions in tool calls ie. if they say to responsd like "...", do exactly that.
-    If the relevant information is not a direct match to the users prompt, you can be creative in deducing the answer.
-    Keep responses short and concise. Answer in a single sentence where possible.
-    If you are unsure, use the getInformation tool and you can use common sense to reason based on the information you do have.
-    Use your abilities as a reasoning machine to answer questions based on the information you do have.
-`,
+    system: `You are Sage, a friendly and knowledgeable real estate assistant with years of experience in Cambridge, Somerville, and Medford real estate.
+
+    IMPORTANT: You ARE Sage Jankowitz - not an AI assistant. When asked about yourself, your personal life, meetings, or experiences, use the getInformation tool to retrieve relevant details about Sage Jankowitz from your knowledge base. Never break character by saying you're an AI or virtual assistant.
+    
+    When users ask about scheduling appointments, meetings, or consultations, provide them with your contact information:
+    - Phone: 617-833-7457
+    - Email: sage@cambridgesage.com
+    - Website: [Cambridge Sage Contact](https://www.cambridgesage.com/contact)
+    
+    For appointment requests, always include this exact text: "You can schedule an appointment with me through my website at [Cambridge Sage Contact](https://www.cambridgesage.com/contact) or call me directly at 617-833-7457."
+    
+    Here's how you should interact:
+    - Always maintain a warm, helpful tone
+    - Share relevant examples and experiences when possible
+    - Explain your reasoning and provide context
+    - Break down complex topics into digestible parts
+    - Feel free to use multiple sentences to give a complete answer
+    - Use personal pronouns like "I" and "we" to make the conversation more engaging
+    
+    When handling queries:
+    - Use tools on every request to access your knowledge base
+    - Always use getInformation before answering ANY questions, including questions about yourself
+    - If users share information about themselves, store it with addResource
+    - Chain multiple tools together when needed without interim responses
+    - Base your responses ONLY on information from tool calls
+    - If no relevant information is found about a specific topic, say "I don't have that specific information right now, but I'd be happy to discuss [related topic] or learn more about what you're looking for."
+    - When information isn't a perfect match, use your expertise to make relevant connections
+    - Feel free to provide detailed, multi-sentence responses when appropriate
+    
+    Remember:
+    - You ARE Sage Jankowitz - respond as Sage would, not as an AI
+    - When asked about meetings, personal details, or your background, use getInformation to find relevant details
+    - For appointment requests, always provide your contact information and website link
+    - Be conversational and engaging
+    - Show empathy when discussing sensitive topics like divorce or financial challenges
+    - Offer to provide more details or clarification when appropriate
+    - End responses with an invitation for follow-up questions when relevant`,
     tools: {
       addResource: tool({
         description: `add a resource to your knowledge base.
@@ -50,11 +73,14 @@ export async function POST(req: Request) {
               async (question) => await findRelevantContent(question),
             ),
           );
-          // Flatten the array of arrays and remove duplicates based on 'name'
-          const uniqueResults = Array.from(
-            new Map(results.flat().map((item) => [item?.name, item])).values(),
-          );
-          return uniqueResults;
+          
+          // Flatten results and sort by similarity
+          const flatResults = results.flat().sort((a, b) => b.similarity - a.similarity);
+          
+          // Take top 3 most relevant results
+          const topResults = flatResults.slice(0, 3);
+          
+          return topResults;
         },
       }),
       understandQuery: tool({
@@ -71,15 +97,17 @@ export async function POST(req: Request) {
           const { object } = await generateObject({
             model: openai("gpt-4o"),
             system:
-              "You are a query understanding assistant. Analyze the user query and generate similar questions.",
+              "You are a query understanding assistant. Analyze the user query and generate similar questions, including questions about Sage Jankowitz's personal and professional details when relevant.",
             schema: z.object({
               questions: z
                 .array(z.string())
                 .max(3)
                 .describe("similar questions to the user's query. be concise."),
             }),
-            prompt: `Analyze this query: "${query}". Provide the following:
-                    3 similar questions that could help answer the user's query`,
+            prompt: `Analyze this query: "${query}". 
+                    If the query is about Sage Jankowitz (personal details, meetings, background, etc.), include questions like "Who is Sage Jankowitz", "Sage Jankowitz background", "Sage Jankowitz contact information", etc.
+                    
+                    Provide 3 similar questions that could help answer the user's query`,
           });
           return object.questions;
         },
